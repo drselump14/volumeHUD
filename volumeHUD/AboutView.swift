@@ -18,6 +18,7 @@ struct AboutView: View {
     #endif // !SANDBOX
     @AppStorage("volumeHUDFollowsMouse") private var volumeHUDFollowsMouse: Bool = true
     @AppStorage("useRelativePositioning") private var useRelativePositioning: Bool = true
+    @AppStorage("keepHUDWhileMuted") private var keepHUDWhileMuted: Bool = true
 
     #if !SANDBOX
         /// State to track if an update is available
@@ -255,12 +256,51 @@ struct AboutView: View {
                 .padding(.leading, settingPadding)
                 .animation(.easeInOut(duration: 0.3), value: useRelativePositioning)
 
+                // MARK: - Keep HUD While Muted Toggle
+
+                VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
+                    HStack(alignment: .center, spacing: iconColumnWidth) {
+                        Image(systemName: keepHUDWhileMuted ? "speaker.slash.fill" : "speaker.slash")
+                            .foregroundStyle(keepHUDWhileMuted ? .red : .gray)
+                            .font(.system(size: 14))
+                            .frame(width: 14, alignment: .leading)
+                            .animation(.easeInOut(duration: 0.3), value: keepHUDWhileMuted)
+
+                        Text("Keep HUD While Muted")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: minSettingColumnWidth, alignment: .leading)
+
+                        Spacer()
+
+                        Toggle("", isOn: $keepHUDWhileMuted)
+                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                            .scaleEffect(0.8)
+                            .onChange(of: keepHUDWhileMuted) { oldValue, newValue in
+                                logger.debug("Keep HUD while muted setting changed from \(oldValue) to \(newValue).")
+                                appDelegate?.hudController?.keepHUDWhileMutedDidChange()
+                            }
+                    }
+
+                    HStack(spacing: iconColumnWidth) {
+                        Spacer()
+                            .frame(width: 14)
+
+                        Text(keepHUDWhileMuted ? "Stay on screen until unmuted" : "Hide after a moment like normal")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .opacity(0.8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.leading, settingPadding)
+                .animation(.easeInOut(duration: 0.3), value: keepHUDWhileMuted)
+
                 Spacer(minLength: 0)
             }
             .padding(.trailing, 6) // Right side window padding
         }
         .padding(32) // Overall frame padding
-        .frame(width: 540, height: 300)
+        .frame(width: 540, height: 350)
         #if !SANDBOX
             .onAppear {
                 Task {

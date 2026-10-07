@@ -24,6 +24,11 @@ struct HUDView: View {
     private let hudSize: CGFloat = 200
     private let iconSize: CGFloat = 80
 
+    /// Subtle red tint so a muted HUD is distinguishable at a glance
+    private var showsMutedTint: Bool {
+        hudType == .volume && isMuted
+    }
+
     private var iconName: String {
         switch hudType {
         case .volume:
@@ -51,7 +56,7 @@ struct HUDView: View {
                     .frame(height: 56)
                 Image(systemName: iconName)
                     .font(.system(size: iconSize, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.7))
+                    .foregroundStyle(showsMutedTint ? AnyShapeStyle(Color.red.opacity(0.75)) : AnyShapeStyle(.primary.opacity(0.7)))
                     // SF Symbols has misalignment between speaker.slash.fill and speaker.fill
                     .offset(y: hudType == .volume && (isMuted || value <= 0.001) ? 2 : 0)
                 Spacer()
@@ -75,8 +80,14 @@ struct HUDView: View {
         }
         .frame(width: hudSize, height: hudSize)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial),
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.regularMaterial)
+                if showsMutedTint {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.red.opacity(0.12))
+                }
+            },
         )
     }
 
