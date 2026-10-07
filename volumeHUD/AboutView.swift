@@ -19,6 +19,7 @@ struct AboutView: View {
     @AppStorage("volumeHUDFollowsMouse") private var volumeHUDFollowsMouse: Bool = true
     @AppStorage("useRelativePositioning") private var useRelativePositioning: Bool = true
     @AppStorage("keepHUDWhileMuted") private var keepHUDWhileMuted: Bool = true
+    @AppStorage("showMutedHUDOnAllDisplays") private var showMutedHUDOnAllDisplays: Bool = false
 
     #if !SANDBOX
         /// State to track if an update is available
@@ -295,12 +296,51 @@ struct AboutView: View {
                 .padding(.leading, settingPadding)
                 .animation(.easeInOut(duration: 0.3), value: keepHUDWhileMuted)
 
+                // MARK: - Muted HUD on All Displays Toggle
+
+                VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
+                    HStack(alignment: .center, spacing: iconColumnWidth) {
+                        Image(systemName: showMutedHUDOnAllDisplays ? "rectangle.on.rectangle" : "rectangle")
+                            .foregroundStyle(showMutedHUDOnAllDisplays ? .purple : .gray)
+                            .font(.system(size: 14))
+                            .frame(width: 14, alignment: .leading)
+                            .animation(.easeInOut(duration: 0.3), value: showMutedHUDOnAllDisplays)
+
+                        Text("Mirror Muted HUD")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: minSettingColumnWidth, alignment: .leading)
+
+                        Spacer()
+
+                        Toggle("", isOn: $showMutedHUDOnAllDisplays)
+                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                            .scaleEffect(0.8)
+                            .onChange(of: showMutedHUDOnAllDisplays) { oldValue, newValue in
+                                logger.debug("Muted HUD on all displays setting changed from \(oldValue) to \(newValue).")
+                                appDelegate?.hudController?.showMutedOnAllDisplaysDidChange()
+                            }
+                    }
+
+                    HStack(spacing: iconColumnWidth) {
+                        Spacer()
+                            .frame(width: 14)
+
+                        Text(showMutedHUDOnAllDisplays ? "Show muted state on every screen" : "Show muted state on one screen")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .opacity(0.8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.leading, settingPadding)
+                .animation(.easeInOut(duration: 0.3), value: showMutedHUDOnAllDisplays)
+
                 Spacer(minLength: 0)
             }
             .padding(.trailing, 6) // Right side window padding
         }
         .padding(32) // Overall frame padding
-        .frame(width: 540, height: 350)
+        .frame(width: 540, height: 400)
         #if !SANDBOX
             .onAppear {
                 Task {

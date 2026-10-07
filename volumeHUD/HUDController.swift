@@ -18,6 +18,8 @@ class HUDController: ObservableObject {
     let logger: Logger = .init()
 
     private var hudWindow: NSWindow?
+    /// Extra HUD windows on the other displays, used to show the muted HUD everywhere
+    private var mirrorWindows: [NSWindow] = []
     private var hostingView: NSHostingView<HUDView>?
     private var hideTimer: Timer?
     private var lastShownVolume: Float?
@@ -49,6 +51,19 @@ class HUDController: ObservableObject {
     func keepHUDWhileMutedDidChange() {
         guard !keepHUDWhileMuted, isShowing, lastShownHUDType == .volume, lastShownMuted == true else { return }
         scheduleHideTimer()
+    }
+
+    /// Whether the muted HUD should be mirrored on every display (defaults to off)
+    private var showMutedOnAllDisplays: Bool {
+        UserDefaults.standard.bool(forKey: "showMutedHUDOnAllDisplays")
+    }
+
+    /// Called when the "Muted HUD on All Displays" setting changes. Adds or removes mirrors for a
+    /// muted HUD that is currently on screen.
+    @MainActor
+    func showMutedOnAllDisplaysDidChange() {
+        guard isShowing, lastShownHUDType == .volume, lastShownMuted == true else { return }
+        updateMirrorWindows(hudType: .volume, value: lastShownVolume ?? 0, isMuted: true)
     }
 
     /// Called on any mute state change (user-initiated or not). If the HUD is pinned on screen
@@ -122,10 +137,12 @@ class HUDController: ObservableObject {
         // If the HUD window exists, update its position
         if hudWindow != nil {
             updateWindowPosition()
+            refreshMirrorWindows()
             // Re-apply after a short delay to handle transient frame/layout updates macOS screen
             // geometry may still be adjusting after didChangeScreenParameters fires
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 self?.updateWindowPosition()
+                self?.refreshMirrorWindows()
             }
         }
     }
@@ -215,8 +232,18 @@ class HUDController: ObservableObject {
         let selectedDisplayIDText = selectedDisplayID.map { String($0) } ?? "unknown"
         logger.debug("HUD screen selection: \(selectionReason), displayID=\(selectedDisplayIDText), frame=\(targetScreen.frame)")
 
+        let newWindowRect = hudFrame(on: targetScreen, size: windowSize)
+
+        // Update the window frame
+        window.setFrame(newWindowRect, display: true)
+
+        logger.debug("Updated HUD window position to: \(newWindowRect)")
+    }
+
+    /// Returns the HUD window frame for a screen, honoring the positioning preference.
+    private func hudFrame(on screen: NSScreen, size: NSSize = NSSize(width: 200, height: 200)) -> NSRect {
         // Use full screen frame to ignore Dock positioning
-        let screenFrame = targetScreen.frame
+        let screenFrame = screen.frame
 
         // Check user preference for positioning
         let useRelativePositioning = UserDefaults.standard.bool(forKey: "useRelativePositioning")
@@ -224,17 +251,12 @@ class HUDController: ObservableObject {
             ? screenFrame.origin.y + screenFrame.height * 0.17 // 17% from bottom
             : screenFrame.origin.y + 140 // 140px from bottom
 
-        let newWindowRect = NSRect(
-            x: screenFrame.origin.x + (screenFrame.width - windowSize.width) / 2,
+        return NSRect(
+            x: screenFrame.origin.x + (screenFrame.width - size.width) / 2,
             y: yPosition,
-            width: windowSize.width,
-            height: windowSize.height,
+            width: size.width,
+            height: size.height,
         )
-
-        // Update the window frame
-        window.setFrame(newWindowRect, display: true)
-
-        logger.debug("Updated HUD window position to: \(newWindowRect)")
     }
 
     /// Returns the NSScreen that currently contains the mouse cursor
@@ -290,6 +312,7 @@ class HUDController: ObservableObject {
 
         // Update the content view
         if let window = hudWindow {
+
             let shouldUpdateContent: Bool =
                 switch hudType {
                 case .volume:
@@ -313,18 +336,7 @@ class HUDController: ObservableObject {
             }
 
             // Always recreate hosting view to avoid SwiftUI state issues
-            let newHostingView = NSHostingView(rootView: HUDView(hudType: hudType, value: value, isMuted: isMuted))
-            newHostingView.frame = window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 200, height: 200)
-
-            // Ensure hosting view background is clear for proper material rendering
-            newHostingView.wantsLayer = true
-            newHostingView.layer?.backgroundColor = NSColor.clear.cgColor
-
-            // Remove old content view if it exists
-            if let oldView = window.contentView { oldView.removeFromSuperview() }
-
-            window.contentView = newHostingView
-            hostingView = newHostingView
+            hostingView = setHUDContent(of: window, hudType: hudType, value: value, isMuted: isMuted)
 
             // Update position based on HUD type
             updateWindowPosition(for: hudType)
@@ -332,6 +344,9 @@ class HUDController: ObservableObject {
             // Show the window
             window.orderFront(nil)
             isShowing = true
+
+            // Mirror the muted HUD to other displays (or clear stale mirrors)
+            updateMirrorWindows(hudType: hudType, value: value, isMuted: isMuted)
         }
 
         if !keepVisible { scheduleHideTimer() }
@@ -358,20 +373,88 @@ class HUDController: ObservableObject {
         }
     }
 
+    /// Replaces the window's content with a fresh HUDView and returns the new hosting view.
+    @MainActor
+    @discardableResult
+    private func setHUDContent(of window: NSWindow, hudType: HUDType, value: Float, isMuted: Bool) -> NSHostingView<HUDView> {
+        let newHostingView = NSHostingView(rootView: HUDView(hudType: hudType, value: value, isMuted: isMuted))
+        newHostingView.frame = window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 200, height: 200)
+
+        // Ensure hosting view background is clear for proper material rendering
+        newHostingView.wantsLayer = true
+        newHostingView.layer?.backgroundColor = NSColor.clear.cgColor
+
+        // Remove old content view if it exists
+        if let oldView = window.contentView { oldView.removeFromSuperview() }
+
+        window.contentView = newHostingView
+        return newHostingView
+    }
+
+    // MARK: Mirror Windows
+
+    /// Shows a copy of the muted volume HUD on every display other than the main HUD's, or removes
+    /// the copies when they no longer apply.
+    @MainActor
+    private func updateMirrorWindows(hudType: HUDType, value: Float, isMuted: Bool) {
+        removeMirrorWindows()
+
+        guard hudType == .volume, isMuted, showMutedOnAllDisplays, let mainWindow = hudWindow else { return }
+
+        let mainCenter = NSPoint(x: mainWindow.frame.midX, y: mainWindow.frame.midY)
+        for screen in NSScreen.screens where !screen.frame.contains(mainCenter) {
+            let mirror = makeOverlayWindow()
+            setHUDContent(of: mirror, hudType: hudType, value: value, isMuted: isMuted)
+            mirror.setFrame(hudFrame(on: screen), display: true)
+            mirror.orderFront(nil)
+            mirrorWindows.append(mirror)
+        }
+
+        if !mirrorWindows.isEmpty {
+            logger.debug("Showing muted HUD on \(mirrorWindows.count) additional display(s).")
+        }
+    }
+
+    /// Rebuilds mirrors after a display change so they land on the current set of screens.
+    @MainActor
+    private func refreshMirrorWindows() {
+        guard !mirrorWindows.isEmpty, isShowing, lastShownHUDType == .volume, lastShownMuted == true else { return }
+        updateMirrorWindows(hudType: .volume, value: lastShownVolume ?? 0, isMuted: true)
+    }
+
+    @MainActor
+    private func removeMirrorWindows() {
+        for mirror in mirrorWindows {
+            mirror.orderOut(nil)
+        }
+        mirrorWindows.removeAll()
+    }
+
     @MainActor
     private func createHUDWindow() {
+        let window = makeOverlayWindow()
+        hudWindow = window
+
+        // Set the initial position
+        updateWindowPosition()
+
+        // Start the window hidden (only show when volume changes)
+        window.orderOut(nil)
+
+        logger.debug("Created HUD window.")
+    }
+
+    /// Creates a borderless, click-through overlay window for displaying a HUD.
+    @MainActor
+    private func makeOverlayWindow() -> NSWindow {
         // Create the window with special properties for overlay
-        hudWindow = NSWindow(
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false,
         )
-
-        guard let window = hudWindow else {
-            logger.error("createHUDWindow: failed to create NSWindow (hudWindow is nil)")
-            return
-        }
+        window.isReleasedWhenClosed = false
 
         // Configure window properties for overlay behavior. Use `.statusBar` level to appear above
         // normal windows but not block Exposé/Show Desktop.
@@ -384,13 +467,7 @@ class HUDController: ObservableObject {
         // `canJoinAllSpaces` is sufficient for cross-space visibility.
         window.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .transient]
 
-        // Set the initial position
-        updateWindowPosition()
-
-        // Start the window hidden (only show when volume changes)
-        window.orderOut(nil)
-
-        logger.debug("Created HUD window.")
+        return window
     }
 
     // MARK: Hide HUD
@@ -399,15 +476,25 @@ class HUDController: ObservableObject {
     private func hideHUD() {
         guard let window = hudWindow else { return }
 
+        // Take ownership of the mirrors so a re-show during the fade gets fresh ones
+        let mirrors = mirrorWindows
+        mirrorWindows.removeAll()
+
         // Animate fade-out before hiding
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.11
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             window.animator().alphaValue = 0.0
+            for mirror in mirrors {
+                mirror.animator().alphaValue = 0.0
+            }
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
                 window.orderOut(nil)
                 window.alphaValue = 1.0 // Reset for next show
+                for mirror in mirrors {
+                    mirror.orderOut(nil)
+                }
                 self?.isShowing = false
             }
         }
