@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.18.4/.schema/devbox.schema.json",
+  "packages": [
+    "just@latest",
+    "swiftlint@latest",
+    "swiftformat@latest"
+  ],
+  "shell": {
+    "scripts": {
+      "build": "just build",
+      "install": "just install"
+    }
+  }
+}
