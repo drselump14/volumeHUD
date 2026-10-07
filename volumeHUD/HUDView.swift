@@ -29,6 +29,9 @@ struct HUDView: View {
         hudType == .volume && isMuted
     }
 
+    /// Muted HUD can stay on screen indefinitely, so make it translucent to be less obtrusive
+    private let mutedOpacity: Double = 0.8
+
     private var iconName: String {
         switch hudType {
         case .volume:
@@ -89,6 +92,7 @@ struct HUDView: View {
                 }
             },
         )
+        .opacity(showsMutedTint ? mutedOpacity : 1.0)
     }
 
     @ViewBuilder
