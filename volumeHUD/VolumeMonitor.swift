@@ -336,6 +336,12 @@ class VolumeMonitor: ObservableObject, @unchecked Sendable {
                 }
             } else {
                 logger.debug(showReason)
+                // Unpin a muted HUD even when the unmute came from a non-user source
+                if muteChanged {
+                    DispatchQueue.main.async {
+                        self.hudController?.volumeMuteStateDidChange(isMuted: newMuted)
+                    }
+                }
             }
 
             // Update previous values

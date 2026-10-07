@@ -38,6 +38,28 @@ class HUDController: ObservableObject {
         displayHUD(hudType: .volume, value: volume, isMuted: isMuted)
     }
 
+    /// Whether the volume HUD should stay on screen while muted (defaults to on)
+    private var keepHUDWhileMuted: Bool {
+        UserDefaults.standard.object(forKey: "keepHUDWhileMuted") as? Bool ?? true
+    }
+
+    /// Called when the "Keep HUD While Muted" setting changes. Releases a pinned muted HUD when
+    /// the setting is turned off.
+    @MainActor
+    func keepHUDWhileMutedDidChange() {
+        guard !keepHUDWhileMuted, isShowing, lastShownHUDType == .volume, lastShownMuted == true else { return }
+        scheduleHideTimer()
+    }
+
+    /// Called on any mute state change (user-initiated or not). If the HUD is pinned on screen
+    /// showing muted volume and audio gets unmuted, resume the normal auto-hide behavior.
+    @MainActor
+    func volumeMuteStateDidChange(isMuted: Bool) {
+        guard !isMuted, isShowing, lastShownHUDType == .volume, lastShownMuted == true else { return }
+        lastShownMuted = nil // Force a content rebuild on the next show
+        scheduleHideTimer()
+    }
+
     #if !SANDBOX
         @MainActor
         func showBrightnessHUD(brightness: Float) {
@@ -258,6 +280,9 @@ class HUDController: ObservableObject {
         // Cancel any existing hide timer
         hideTimer?.invalidate()
 
+        // Keep the volume HUD on screen for as long as audio is muted
+        let keepVisible = hudType == .volume && isMuted && keepHUDWhileMuted
+
         // Create or update the HUD window
         if hudWindow == nil {
             createHUDWindow()
@@ -283,7 +308,7 @@ class HUDController: ObservableObject {
 
             // If nothing changed and the window is already visible, just extend the timer
             if window.isVisible, !shouldUpdateContent {
-                scheduleHideTimer()
+                if !keepVisible { scheduleHideTimer() }
                 return
             }
 
@@ -309,7 +334,7 @@ class HUDController: ObservableObject {
             isShowing = true
         }
 
-        scheduleHideTimer()
+        if !keepVisible { scheduleHideTimer() }
 
         // Remember last shown state to avoid redundant view rebuilds
         lastShownHUDType = hudType
