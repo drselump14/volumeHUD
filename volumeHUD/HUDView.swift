@@ -20,17 +20,21 @@ struct HUDView: View {
     let hudType: HUDType
     let value: Float
     let isMuted: Bool
+    /// Renders the small icon-only badge used for a muted HUD that stays on screen
+    var isCompact: Bool = false
 
-    private let hudSize: CGFloat = 200
+    static let hudSize: CGFloat = 200
+    static let badgeSize: CGFloat = 64
     private let iconSize: CGFloat = 80
+    private let badgeIconSize: CGFloat = 28
 
     /// Subtle red tint so a muted HUD is distinguishable at a glance
     private var showsMutedTint: Bool {
         hudType == .volume && isMuted
     }
 
-    /// Muted HUD can stay on screen indefinitely, so make it translucent to be less obtrusive
-    private let mutedOpacity: Double = 0.8
+    /// Muted HUD (and its badge) can stay on screen indefinitely, so make it translucent to be less obtrusive
+    private let mutedOpacity: Double = 0.9
 
     private var iconName: String {
         switch hudType {
@@ -53,13 +57,49 @@ struct HUDView: View {
     }
 
     var body: some View {
+        Group {
+            if isCompact {
+                badgeContent
+            } else {
+                fullContent
+            }
+        }
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(.regularMaterial)
+                if showsMutedTint {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(Color.red.opacity(0.12))
+                }
+            },
+        )
+        .opacity(showsMutedTint ? mutedOpacity : 1.0)
+    }
+
+    private var cornerRadius: CGFloat {
+        isCompact ? 14 : 16
+    }
+
+    private var iconStyle: AnyShapeStyle {
+        showsMutedTint ? AnyShapeStyle(Color.red.opacity(0.75)) : AnyShapeStyle(.primary.opacity(0.7))
+    }
+
+    private var badgeContent: some View {
+        Image(systemName: iconName)
+            .font(.system(size: badgeIconSize, weight: .medium))
+            .foregroundStyle(iconStyle)
+            .frame(width: Self.badgeSize, height: Self.badgeSize)
+    }
+
+    private var fullContent: some View {
         VStack(spacing: 0) {
             VStack { // Icon section
                 Spacer()
                     .frame(height: 56)
                 Image(systemName: iconName)
                     .font(.system(size: iconSize, weight: .medium))
-                    .foregroundStyle(showsMutedTint ? AnyShapeStyle(Color.red.opacity(0.75)) : AnyShapeStyle(.primary.opacity(0.7)))
+                    .foregroundStyle(iconStyle)
                     // SF Symbols has misalignment between speaker.slash.fill and speaker.fill
                     .offset(y: hudType == .volume && (isMuted || value <= 0.001) ? 2 : 0)
                 Spacer()
@@ -81,18 +121,7 @@ struct HUDView: View {
             }
             .frame(height: 80)
         }
-        .frame(width: hudSize, height: hudSize)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.regularMaterial)
-                if showsMutedTint {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.red.opacity(0.12))
-                }
-            },
-        )
-        .opacity(showsMutedTint ? mutedOpacity : 1.0)
+        .frame(width: Self.hudSize, height: Self.hudSize)
     }
 
     @ViewBuilder
@@ -156,6 +185,13 @@ struct HUDView: View {
     ZStack {
         Color.black.frame(width: 360, height: 380).ignoresSafeArea()
         HUDView(hudType: .volume, value: 0.0, isMuted: true)
+    }
+}
+
+#Preview("Mute Badge") {
+    ZStack {
+        Color.black.frame(width: 360, height: 380).ignoresSafeArea()
+        HUDView(hudType: .volume, value: 0.0, isMuted: true, isCompact: true)
     }
 }
 
