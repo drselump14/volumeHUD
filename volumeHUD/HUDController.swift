@@ -26,6 +26,10 @@ class HUDController: ObservableObject {
     private var lastShownMuted: Bool?
     private var lastShownBrightness: Float?
     private var lastShownHUDType: HUDType?
+    /// Whether a pinned muted HUD has shrunk down to its small badge
+    private var isCompactBadge = false
+    /// Bumped on every content change so an in-flight collapse can tell it went stale
+    private var contentGeneration = 0
     private var isObservingDisplayChanges = false
     private let isPreviewMode: Bool
 
@@ -151,7 +155,7 @@ class HUDController: ObservableObject {
     private func updateWindowPosition(for hudType: HUDType? = nil) {
         guard let window = hudWindow else { return }
 
-        let windowSize = NSSize(width: 200, height: 200)
+        let windowSize = currentWindowSize
 
         // Brightness HUD always shows on built-in display (since that's what it controls). Volume
         // HUD respects user preference for display location.
@@ -240,8 +244,14 @@ class HUDController: ObservableObject {
         logger.debug("Updated HUD window position to: \(newWindowRect)")
     }
 
+    /// Window size for the current HUD state: full HUD, or the small muted badge.
+    private var currentWindowSize: NSSize {
+        let side = isCompactBadge ? HUDView.badgeSize : HUDView.hudSize
+        return NSSize(width: side, height: side)
+    }
+
     /// Returns the HUD window frame for a screen, honoring the positioning preference.
-    private func hudFrame(on screen: NSScreen, size: NSSize = NSSize(width: 200, height: 200)) -> NSRect {
+    private func hudFrame(on screen: NSScreen, size: NSSize) -> NSRect {
         // Use full screen frame to ignore Dock positioning
         let screenFrame = screen.frame
 
@@ -305,6 +315,10 @@ class HUDController: ObservableObject {
         // Keep the volume HUD on screen for as long as audio is muted
         let keepVisible = hudType == .volume && isMuted && keepHUDWhileMuted
 
+        // Any new event shows the full HUD again; a pinned muted HUD re-collapses afterward
+        let wasCompact = isCompactBadge
+        isCompactBadge = false
+
         // Create or update the HUD window
         if hudWindow == nil {
             createHUDWindow()
@@ -330,10 +344,12 @@ class HUDController: ObservableObject {
                 }
 
             // If nothing changed and the window is already visible, just extend the timer
-            if window.isVisible, !shouldUpdateContent {
-                if !keepVisible { scheduleHideTimer() }
+            if window.isVisible, !shouldUpdateContent, !wasCompact {
+                scheduleHideTimer(collapse: keepVisible)
                 return
             }
+
+            contentGeneration += 1
 
             // Always recreate hosting view to avoid SwiftUI state issues
             hostingView = setHUDContent(of: window, hudType: hudType, value: value, isMuted: isMuted)
@@ -349,7 +365,7 @@ class HUDController: ObservableObject {
             updateMirrorWindows(hudType: hudType, value: value, isMuted: isMuted)
         }
 
-        if !keepVisible { scheduleHideTimer() }
+        scheduleHideTimer(collapse: keepVisible)
 
         // Remember last shown state to avoid redundant view rebuilds
         lastShownHUDType = hudType
@@ -363,12 +379,65 @@ class HUDController: ObservableObject {
         }
     }
 
+    /// Schedules the HUD to hide, or with `collapse` to shrink into the muted badge instead.
     @MainActor
-    private func scheduleHideTimer() {
+    private func scheduleHideTimer(collapse: Bool = false) {
         hideTimer?.invalidate()
         hideTimer = Timer.scheduledTimer(withTimeInterval: 1.1, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self?.hideHUD()
+                if collapse {
+                    self?.collapseToBadge()
+                } else {
+                    self?.hideHUD()
+                }
+            }
+        }
+    }
+
+    /// Cross-fades a pinned muted HUD (and its mirrors) into the small badge.
+    @MainActor
+    private func collapseToBadge() {
+        guard let window = hudWindow, isShowing, !isCompactBadge, lastShownHUDType == .volume, lastShownMuted == true else { return }
+
+        let generation = contentGeneration
+        let oldMirrors = mirrorWindows
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.11
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().alphaValue = 0.0
+            for mirror in oldMirrors {
+                mirror.animator().alphaValue = 0.0
+            }
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                // Something new was shown (or the HUD hid) during the fade; leave it alone
+                guard generation == contentGeneration, isShowing, lastShownMuted == true else {
+                    window.alphaValue = 1.0
+                    return
+                }
+
+                isCompactBadge = true
+                let volume = lastShownVolume ?? 0
+                hostingView = setHUDContent(of: window, hudType: .volume, value: volume, isMuted: true)
+                updateWindowPosition(for: .volume)
+                updateMirrorWindows(hudType: .volume, value: volume, isMuted: true)
+
+                let newMirrors = mirrorWindows
+                for mirror in newMirrors {
+                    mirror.alphaValue = 0.0
+                }
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.2
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    window.animator().alphaValue = 1.0
+                    for mirror in newMirrors {
+                        mirror.animator().alphaValue = 1.0
+                    }
+                }
+                logger.debug("Collapsed muted HUD to badge.")
             }
         }
     }
@@ -377,8 +446,8 @@ class HUDController: ObservableObject {
     @MainActor
     @discardableResult
     private func setHUDContent(of window: NSWindow, hudType: HUDType, value: Float, isMuted: Bool) -> NSHostingView<HUDView> {
-        let newHostingView = NSHostingView(rootView: HUDView(hudType: hudType, value: value, isMuted: isMuted))
-        newHostingView.frame = window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 200, height: 200)
+        let newHostingView = NSHostingView(rootView: HUDView(hudType: hudType, value: value, isMuted: isMuted, isCompact: isCompactBadge))
+        newHostingView.frame = window.contentView?.bounds ?? NSRect(origin: .zero, size: currentWindowSize)
 
         // Ensure hosting view background is clear for proper material rendering
         newHostingView.wantsLayer = true
@@ -405,7 +474,7 @@ class HUDController: ObservableObject {
         for screen in NSScreen.screens where !screen.frame.contains(mainCenter) {
             let mirror = makeOverlayWindow()
             setHUDContent(of: mirror, hudType: hudType, value: value, isMuted: isMuted)
-            mirror.setFrame(hudFrame(on: screen), display: true)
+            mirror.setFrame(hudFrame(on: screen, size: currentWindowSize), display: true)
             mirror.orderFront(nil)
             mirrorWindows.append(mirror)
         }
@@ -479,6 +548,8 @@ class HUDController: ObservableObject {
         // Take ownership of the mirrors so a re-show during the fade gets fresh ones
         let mirrors = mirrorWindows
         mirrorWindows.removeAll()
+        isCompactBadge = false
+        contentGeneration += 1
 
         // Animate fade-out before hiding
         NSAnimationContext.runAnimationGroup { context in
