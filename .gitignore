@@ -54,7 +54,3 @@ buildServer.json
 releases/
 scripts/
 Secrets.swift
-
-# Devbox
-.devbox/
-.direnv/
