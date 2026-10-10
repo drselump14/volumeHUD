@@ -39,10 +39,6 @@ struct AboutView: View {
     let logger: Logger = .init()
 
     // Visual alignment
-    private let iconColumnWidth: CGFloat = 20
-    private let minSettingColumnWidth: CGFloat = 140
-    private let settingPadding: CGFloat = 24 // Higher for less padding
-    private let spaceBeforeSubtitle: CGFloat = -3
 
     /// Get the app version
     private var appVersion: String {
@@ -130,210 +126,79 @@ struct AboutView: View {
                 // MARK: - Open at Login Setting
 
                 if let loginItemManager {
-                    LoginItemSetting(
-                        loginItemManager: loginItemManager,
-                        iconColumnWidth: iconColumnWidth,
-                        minSettingColumnWidth: minSettingColumnWidth,
-                        settingPadding: settingPadding,
-                        spaceBeforeSubtitle: spaceBeforeSubtitle,
-                    )
+                    LoginItemSetting(loginItemManager: loginItemManager)
                 }
 
                 #if !SANDBOX
 
                     // MARK: - Brightness HUD Toggle
 
-                    VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
-                        HStack(alignment: .center, spacing: iconColumnWidth) {
-                            Image(systemName: "sun.max.fill")
-                                .foregroundStyle(brightnessEnabled ? .orange : .gray)
-                                .font(.system(size: 14))
-                                .frame(width: 14, alignment: .leading)
-                                .animation(.easeInOut(duration: 0.3), value: brightnessEnabled)
-
-                            Text("Brightness HUD")
-                                .font(.system(size: 12, weight: .medium))
-                                .frame(width: minSettingColumnWidth, alignment: .leading)
-
-                            Spacer()
-
-                            Toggle("", isOn: $brightnessEnabled)
-                                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                                .scaleEffect(0.8)
-                                .onChange(of: brightnessEnabled) { oldValue, newValue in
-                                    logger.debug("Brightness setting changed from \(oldValue) to \(newValue).")
-                                    appDelegate?.startBrightnessMonitoringIfEnabled()
-                                }
-                        }
-
-                        HStack(spacing: iconColumnWidth) {
-                            Spacer()
-                                .frame(width: 14)
-
-                            Text("Experimental, built-in display only")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .opacity(0.8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                    SettingToggleRow(
+                        title: "Brightness HUD",
+                        subtitle: "Experimental, built-in display only",
+                        icon: "sun.max.fill",
+                        tint: .orange,
+                        isOn: $brightnessEnabled,
+                    )
+                    .onChange(of: brightnessEnabled) { oldValue, newValue in
+                        logger.debug("Brightness setting changed from \(oldValue) to \(newValue).")
+                        appDelegate?.startBrightnessMonitoringIfEnabled()
                     }
-                    .padding(.leading, settingPadding)
-                    .animation(.easeInOut(duration: 0.3), value: brightnessEnabled)
                 #endif // !SANDBOX
 
                 // MARK: - Display Toggle for HUD Placement
 
-                VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
-                    HStack(alignment: .center, spacing: iconColumnWidth) {
-                        Image(systemName: volumeHUDFollowsMouse ? "cursorarrow.click.2" : "laptopcomputer")
-                            .foregroundStyle(volumeHUDFollowsMouse ? .blue : .gray)
-                            .font(.system(size: 14))
-                            .frame(width: 14, alignment: .leading)
-                            .animation(.easeInOut(duration: 0.3), value: volumeHUDFollowsMouse)
-
-                        Text("HUD Follows Mouse")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: minSettingColumnWidth, alignment: .leading)
-
-                        Spacer()
-
-                        Toggle("", isOn: $volumeHUDFollowsMouse)
-                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                            .scaleEffect(0.8)
-                            .onChange(of: volumeHUDFollowsMouse) { oldValue, newValue in
-                                logger.debug("Volume HUD display setting changed from \(oldValue) to \(newValue).")
-                            }
-                    }
-
-                    HStack(spacing: iconColumnWidth) {
-                        Spacer()
-                            .frame(width: 14)
-
-                        Text(volumeHUDFollowsMouse ? "Show on screen with mouse cursor" : "Always show on the primary display")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .opacity(0.8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                SettingToggleRow(
+                    title: "HUD Follows Mouse",
+                    subtitle: volumeHUDFollowsMouse ? "Show on screen with mouse cursor" : "Always show on the primary display",
+                    icon: volumeHUDFollowsMouse ? "cursorarrow.click.2" : "laptopcomputer",
+                    tint: .blue,
+                    isOn: $volumeHUDFollowsMouse,
+                )
+                .onChange(of: volumeHUDFollowsMouse) { oldValue, newValue in
+                    logger.debug("Volume HUD display setting changed from \(oldValue) to \(newValue).")
                 }
-                .padding(.leading, settingPadding)
-                .animation(.easeInOut(duration: 0.3), value: volumeHUDFollowsMouse)
 
                 // MARK: - Relative Positioning Toggle
 
-                VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
-                    HStack(alignment: .center, spacing: iconColumnWidth) {
-                        Image(systemName: useRelativePositioning ? "arrow.up.and.down.text.horizontal" : "arrow.down.to.line")
-                            .foregroundStyle(useRelativePositioning ? .cyan : .gray)
-                            .font(.system(size: 14))
-                            .frame(width: 14, alignment: .leading)
-                            .animation(.easeInOut(duration: 0.3), value: useRelativePositioning)
-
-                        Text("Relative HUD Position")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: minSettingColumnWidth, alignment: .leading)
-
-                        Spacer()
-
-                        Toggle("", isOn: $useRelativePositioning)
-                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                            .scaleEffect(0.8)
-                            .onChange(of: useRelativePositioning) { oldValue, newValue in
-                                logger.debug("Relative positioning setting changed from \(oldValue) to \(newValue).")
-                            }
-                    }
-
-                    HStack(spacing: iconColumnWidth) {
-                        Spacer()
-                            .frame(width: 14)
-
-                        Text(useRelativePositioning ? "Relative percentage from bottom" : "Absolute from bottom (Apple default)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .opacity(0.8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                SettingToggleRow(
+                    title: "Relative HUD Position",
+                    subtitle: useRelativePositioning ? "Relative percentage from bottom" : "Absolute from bottom (Apple default)",
+                    icon: useRelativePositioning ? "arrow.up.and.down.text.horizontal" : "arrow.down.to.line",
+                    tint: .cyan,
+                    isOn: $useRelativePositioning,
+                )
+                .onChange(of: useRelativePositioning) { oldValue, newValue in
+                    logger.debug("Relative positioning setting changed from \(oldValue) to \(newValue).")
                 }
-                .padding(.leading, settingPadding)
-                .animation(.easeInOut(duration: 0.3), value: useRelativePositioning)
 
                 // MARK: - Keep HUD While Muted Toggle
 
-                VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
-                    HStack(alignment: .center, spacing: iconColumnWidth) {
-                        Image(systemName: keepHUDWhileMuted ? "speaker.slash.fill" : "speaker.slash")
-                            .foregroundStyle(keepHUDWhileMuted ? .red : .gray)
-                            .font(.system(size: 14))
-                            .frame(width: 14, alignment: .leading)
-                            .animation(.easeInOut(duration: 0.3), value: keepHUDWhileMuted)
-
-                        Text("Keep HUD While Muted")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: minSettingColumnWidth, alignment: .leading)
-
-                        Spacer()
-
-                        Toggle("", isOn: $keepHUDWhileMuted)
-                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                            .scaleEffect(0.8)
-                            .onChange(of: keepHUDWhileMuted) { oldValue, newValue in
-                                logger.debug("Keep HUD while muted setting changed from \(oldValue) to \(newValue).")
-                                appDelegate?.hudController?.keepHUDWhileMutedDidChange()
-                            }
-                    }
-
-                    HStack(spacing: iconColumnWidth) {
-                        Spacer()
-                            .frame(width: 14)
-
-                        Text(keepHUDWhileMuted ? "Stay on screen until unmuted" : "Hide after a moment like normal")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .opacity(0.8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                SettingToggleRow(
+                    title: "Keep HUD While Muted",
+                    subtitle: keepHUDWhileMuted ? "Stay on screen until unmuted" : "Hide after a moment like normal",
+                    icon: keepHUDWhileMuted ? "speaker.slash.fill" : "speaker.slash",
+                    tint: .red,
+                    isOn: $keepHUDWhileMuted,
+                )
+                .onChange(of: keepHUDWhileMuted) { oldValue, newValue in
+                    logger.debug("Keep HUD while muted setting changed from \(oldValue) to \(newValue).")
+                    appDelegate?.hudController?.keepHUDWhileMutedDidChange()
                 }
-                .padding(.leading, settingPadding)
-                .animation(.easeInOut(duration: 0.3), value: keepHUDWhileMuted)
 
                 // MARK: - Muted HUD on All Displays Toggle
 
-                VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
-                    HStack(alignment: .center, spacing: iconColumnWidth) {
-                        Image(systemName: showMutedHUDOnAllDisplays ? "rectangle.on.rectangle" : "rectangle")
-                            .foregroundStyle(showMutedHUDOnAllDisplays ? .purple : .gray)
-                            .font(.system(size: 14))
-                            .frame(width: 14, alignment: .leading)
-                            .animation(.easeInOut(duration: 0.3), value: showMutedHUDOnAllDisplays)
-
-                        Text("Mirror Muted HUD")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: minSettingColumnWidth, alignment: .leading)
-
-                        Spacer()
-
-                        Toggle("", isOn: $showMutedHUDOnAllDisplays)
-                            .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                            .scaleEffect(0.8)
-                            .onChange(of: showMutedHUDOnAllDisplays) { oldValue, newValue in
-                                logger.debug("Muted HUD on all displays setting changed from \(oldValue) to \(newValue).")
-                                appDelegate?.hudController?.showMutedOnAllDisplaysDidChange()
-                            }
-                    }
-
-                    HStack(spacing: iconColumnWidth) {
-                        Spacer()
-                            .frame(width: 14)
-
-                        Text(showMutedHUDOnAllDisplays ? "Show muted state on every screen" : "Show muted state on one screen")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .opacity(0.8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                SettingToggleRow(
+                    title: "Mirror Muted HUD",
+                    subtitle: showMutedHUDOnAllDisplays ? "Show muted state on every screen" : "Show muted state on one screen",
+                    icon: showMutedHUDOnAllDisplays ? "rectangle.on.rectangle" : "rectangle",
+                    tint: .purple,
+                    isOn: $showMutedHUDOnAllDisplays,
+                )
+                .onChange(of: showMutedHUDOnAllDisplays) { oldValue, newValue in
+                    logger.debug("Muted HUD on all displays setting changed from \(oldValue) to \(newValue).")
+                    appDelegate?.hudController?.showMutedOnAllDisplaysDidChange()
                 }
-                .padding(.leading, settingPadding)
-                .animation(.easeInOut(duration: 0.3), value: showMutedHUDOnAllDisplays)
 
                 Spacer(minLength: 0)
             }
@@ -433,51 +298,71 @@ struct AboutView: View {
 // MARK: - LoginItemSetting
 
 private struct LoginItemSetting: View {
-    @ObservedObject private var loginItemManager: LoginItemManager
+    @ObservedObject var loginItemManager: LoginItemManager
 
-    let iconColumnWidth: CGFloat
-    let minSettingColumnWidth: CGFloat
-    let settingPadding: CGFloat
-    let spaceBeforeSubtitle: CGFloat
-
-    init(
-        loginItemManager: LoginItemManager,
-        iconColumnWidth: CGFloat,
-        minSettingColumnWidth: CGFloat,
-        settingPadding: CGFloat,
-        spaceBeforeSubtitle: CGFloat,
-    ) {
-        self.loginItemManager = loginItemManager
-        self.iconColumnWidth = iconColumnWidth
-        self.minSettingColumnWidth = minSettingColumnWidth
-        self.settingPadding = settingPadding
-        self.spaceBeforeSubtitle = spaceBeforeSubtitle
+    var body: some View {
+        SettingToggleRow(
+            title: "Open at Login",
+            icon: "power.circle.fill",
+            tint: .green,
+            isOn: Binding(
+                get: { loginItemManager.isEnabled },
+                set: { loginItemManager.setEnabled($0) },
+            ),
+        )
     }
+}
+
+// MARK: - SettingToggleRow
+
+/// A settings row: tinted icon, title, switch, and an optional subtitle underneath.
+private struct SettingToggleRow: View {
+    let title: String
+    var subtitle: String?
+    let icon: String
+    let tint: Color
+    @Binding var isOn: Bool
+
+    private let iconColumnWidth: CGFloat = 20
+    private let minSettingColumnWidth: CGFloat = 140
+    private let settingPadding: CGFloat = 24 // Higher for less padding
+    private let spaceBeforeSubtitle: CGFloat = -3
 
     var body: some View {
         VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
             HStack(alignment: .center, spacing: iconColumnWidth) {
-                Image(systemName: "power.circle.fill")
-                    .foregroundStyle(loginItemManager.isEnabled ? .green : .gray)
+                Image(systemName: icon)
+                    .foregroundStyle(isOn ? tint : .gray)
                     .font(.system(size: 14))
                     .frame(width: 14, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.3), value: loginItemManager.isEnabled)
+                    .animation(.easeInOut(duration: 0.3), value: isOn)
 
-                Text("Open at Login")
+                Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: minSettingColumnWidth, alignment: .leading)
 
                 Spacer()
 
-                Toggle("", isOn: Binding(
-                    get: { loginItemManager.isEnabled },
-                    set: { loginItemManager.setEnabled($0) },
-                ))
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                .scaleEffect(0.8)
+                Toggle("", isOn: $isOn)
+                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                    .scaleEffect(0.8)
+            }
+
+            if let subtitle {
+                HStack(spacing: iconColumnWidth) {
+                    Spacer()
+                        .frame(width: 14)
+
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .opacity(0.8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .padding(.leading, settingPadding)
+        .animation(.easeInOut(duration: 0.3), value: isOn)
     }
 }
 
