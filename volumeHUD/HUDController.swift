@@ -71,12 +71,14 @@ class HUDController: ObservableObject {
     }
 
     /// Called on any mute state change (user-initiated or not). If the HUD is pinned on screen
-    /// showing muted volume and audio gets unmuted, resume the normal auto-hide behavior.
+    /// showing muted volume and audio gets unmuted, hide it right away since it's now stale.
     @MainActor
     func volumeMuteStateDidChange(isMuted: Bool) {
-        guard !isMuted, isShowing, lastShownHUDType == .volume, lastShownMuted == true else { return }
+        guard !isMuted, lastShownMuted == true else { return }
         lastShownMuted = nil // Force a content rebuild on the next show
-        scheduleHideTimer()
+        guard isShowing, lastShownHUDType == .volume else { return }
+        hideTimer?.invalidate()
+        hideHUD()
     }
 
     #if !SANDBOX
@@ -318,6 +320,10 @@ class HUDController: ObservableObject {
         // Any new event shows the full HUD again; a pinned muted HUD re-collapses afterward
         let wasCompact = isCompactBadge
         isCompactBadge = false
+        contentGeneration += 1
+
+        // A brightness HUD shown over a pinned muted HUD falls back to the badge, not hidden
+        let returnsToBadge = hudType == .brightness && lastShownMuted == true && keepHUDWhileMuted
 
         // Create or update the HUD window
         if hudWindow == nil {
@@ -345,11 +351,9 @@ class HUDController: ObservableObject {
 
             // If nothing changed and the window is already visible, just extend the timer
             if window.isVisible, !shouldUpdateContent, !wasCompact {
-                scheduleHideTimer(collapse: keepVisible)
+                scheduleHideTimer(collapse: keepVisible || returnsToBadge)
                 return
             }
-
-            contentGeneration += 1
 
             // Always recreate hosting view to avoid SwiftUI state issues
             hostingView = setHUDContent(of: window, hudType: hudType, value: value, isMuted: isMuted)
@@ -365,7 +369,7 @@ class HUDController: ObservableObject {
             updateMirrorWindows(hudType: hudType, value: value, isMuted: isMuted)
         }
 
-        scheduleHideTimer(collapse: keepVisible)
+        scheduleHideTimer(collapse: keepVisible || returnsToBadge)
 
         // Remember last shown state to avoid redundant view rebuilds
         lastShownHUDType = hudType
@@ -394,10 +398,17 @@ class HUDController: ObservableObject {
         }
     }
 
-    /// Cross-fades a pinned muted HUD (and its mirrors) into the small badge.
+    /// Cross-fades a pinned muted HUD (and its mirrors) into the small badge. Also used to return
+    /// to the badge after a brightness HUD covered it.
     @MainActor
     private func collapseToBadge() {
-        guard let window = hudWindow, isShowing, !isCompactBadge, lastShownHUDType == .volume, lastShownMuted == true else { return }
+        guard let window = hudWindow, isShowing, !isCompactBadge else { return }
+
+        // Unmuted (or setting turned off) while waiting; nothing to pin anymore
+        guard lastShownMuted == true, keepHUDWhileMuted else {
+            hideHUD()
+            return
+        }
 
         let generation = contentGeneration
         let oldMirrors = mirrorWindows
@@ -420,6 +431,7 @@ class HUDController: ObservableObject {
                 }
 
                 isCompactBadge = true
+                lastShownHUDType = .volume
                 let volume = lastShownVolume ?? 0
                 hostingView = setHUDContent(of: window, hudType: .volume, value: volume, isMuted: true)
                 updateWindowPosition(for: .volume)
