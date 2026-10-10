@@ -39,6 +39,10 @@ struct AboutView: View {
     let logger: Logger = .init()
 
     // Visual alignment
+    private let iconColumnWidth: CGFloat = 20
+    private let minSettingColumnWidth: CGFloat = 140
+    private let settingPadding: CGFloat = 24 // Higher for less padding
+    private let spaceBeforeSubtitle: CGFloat = -3
 
     /// Get the app version
     private var appVersion: String {
@@ -126,7 +130,13 @@ struct AboutView: View {
                 // MARK: - Open at Login Setting
 
                 if let loginItemManager {
-                    LoginItemSetting(loginItemManager: loginItemManager)
+                    LoginItemSetting(
+                        loginItemManager: loginItemManager,
+                        iconColumnWidth: iconColumnWidth,
+                        minSettingColumnWidth: minSettingColumnWidth,
+                        settingPadding: settingPadding,
+                        spaceBeforeSubtitle: spaceBeforeSubtitle,
+                    )
                 }
 
                 #if !SANDBOX
@@ -298,18 +308,51 @@ struct AboutView: View {
 // MARK: - LoginItemSetting
 
 private struct LoginItemSetting: View {
-    @ObservedObject var loginItemManager: LoginItemManager
+    @ObservedObject private var loginItemManager: LoginItemManager
+
+    let iconColumnWidth: CGFloat
+    let minSettingColumnWidth: CGFloat
+    let settingPadding: CGFloat
+    let spaceBeforeSubtitle: CGFloat
+
+    init(
+        loginItemManager: LoginItemManager,
+        iconColumnWidth: CGFloat,
+        minSettingColumnWidth: CGFloat,
+        settingPadding: CGFloat,
+        spaceBeforeSubtitle: CGFloat,
+    ) {
+        self.loginItemManager = loginItemManager
+        self.iconColumnWidth = iconColumnWidth
+        self.minSettingColumnWidth = minSettingColumnWidth
+        self.settingPadding = settingPadding
+        self.spaceBeforeSubtitle = spaceBeforeSubtitle
+    }
 
     var body: some View {
-        SettingToggleRow(
-            title: "Open at Login",
-            icon: "power.circle.fill",
-            tint: .green,
-            isOn: Binding(
-                get: { loginItemManager.isEnabled },
-                set: { loginItemManager.setEnabled($0) },
-            ),
-        )
+        VStack(alignment: .leading, spacing: spaceBeforeSubtitle) {
+            HStack(alignment: .center, spacing: iconColumnWidth) {
+                Image(systemName: "power.circle.fill")
+                    .foregroundStyle(loginItemManager.isEnabled ? .green : .gray)
+                    .font(.system(size: 14))
+                    .frame(width: 14, alignment: .leading)
+                    .animation(.easeInOut(duration: 0.3), value: loginItemManager.isEnabled)
+
+                Text("Open at Login")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: minSettingColumnWidth, alignment: .leading)
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { loginItemManager.isEnabled },
+                    set: { loginItemManager.setEnabled($0) },
+                ))
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .scaleEffect(0.8)
+            }
+        }
+        .padding(.leading, settingPadding)
     }
 }
 
